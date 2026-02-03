@@ -1,0 +1,404 @@
+GET /
+
+DELETE movies-v2
+DELETE movies_semantic
+
+# Get all movies
+POST /movies/_search?size=100
+
+# Full-text search
+POST /movies/_search
+{
+  "query": {
+    "query_string": {
+      "query": "brooks"
+    }
+  }
+}
+
+# Boolean query - Science-Fiction movies with rating >= 8.5 after 2010
+POST /movies/_search
+{
+  "query": {
+    "bool": {
+      "must": [
+        {
+          "match": {
+            "genre": "Science-Fiction"
+          }
+        }
+      ],
+      "filter": [
+        {
+          "range": {
+            "rating": {
+              "gte": 8.5
+            }
+          }
+        },
+        {
+          "range": {
+            "year": {
+              "gt": 2010
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+
+# Aggregation - Average rating per country
+POST /movies/_search
+{
+  "size": 0,
+  "aggs": {
+    "per_country": {
+      "terms": {
+        "field": "country.keyword"
+      },
+      "aggs": {
+        "average_rating": {
+          "avg": {
+            "field": "rating"
+          }
+        }
+      }
+    }
+  }
+}
+
+# Check mappings
+GET /movies/_mappings
+
+# Analyze text
+POST /movies/_analyze
+{
+    "field": "actors",
+    "text": "Albert Brooks"
+}
+
+POST /movies/_search
+{
+    "query": {
+        "query_string": {
+            "query": "brooks"
+        }
+    }
+}
+
+# Term search (exact match)
+POST /movies/_search
+{
+  "query": {
+    "term": {
+      "country": {
+        "value": "United States"
+      }
+    }
+  }
+}
+
+POST /movies/_search
+
+# ============================================
+# SYNONYMS ANALYZER
+# ============================================
+
+PUT /movies-v2
+{
+  "settings": {
+    "analysis": {
+      "filter": {
+        "country_synonyms": {
+          "type": "synonym",
+          "synonyms": [
+            "USA, United States, US, America",
+            "UK, United Kingdom, Britain, England",
+            "South Korea, Korea"
+          ]
+        }
+      },
+      "analyzer": {
+        "country_analyzer": {
+          "type": "custom",
+          "tokenizer": "keyword",
+          "filter": [
+            "lowercase",
+            "country_synonyms"
+          ]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "country": {
+        "type": "text",
+        "analyzer": "country_analyzer",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          }
+        }
+      }
+    }
+  }
+}
+
+
+GET movies-v2/_mapping
+# Reindex with synonyms
+POST _reindex
+{
+    "source": { "index": "movies" },
+    "dest": { "index": "movies-v2" }
+}
+
+# Test analyzer
+POST /movies-v2/_analyze
+{
+    "field": "country",
+    "text": "United States"
+}
+
+# Search with synonym
+POST /movies-v2/_search
+{
+    "query": {
+        "match": {
+            "country": "America"
+        }
+    }
+}
+
+
+# ============================================
+# SEMANTIC SEARCH SETUP
+# ============================================
+
+
+# Create embedding endpoint
+PUT _inference/text_embedding/movies-embeddings
+{
+    "service": "elasticsearch",
+    "service_settings": {
+        "num_allocations": 1,
+        "num_threads": 1,
+        "model_id": ".multilingual-e5-small"
+    }
+}
+
+# Create pipeline to copy synopsis
+PUT _ingest/pipeline/copy_synopsis_to_semantic
+{
+  "processors": [
+    {
+      "set": {
+        "field": "synopsis_semantic",
+        "copy_from": "synopsis"
+      }
+    }
+  ]
+}
+
+# Create semantic index
+PUT /movies_semantic
+{
+  "mappings": {
+    "properties": {
+      "title": {
+        "type": "text"
+      },
+      "synopsis": {
+        "type": "text"
+      },
+      "synopsis_semantic": {
+        "type": "semantic_text",
+        "inference_id": "movies-embeddings"
+      },
+      "genre": {
+        "type": "keyword"
+      },
+      "director": {
+        "type": "text"
+      },
+      "year": {
+        "type": "integer"
+      },
+      "rating": {
+        "type": "float"
+      },
+      "country": {
+        "type": "keyword"
+      }
+    }
+  }
+}
+# Reindex with semantic field
+POST _reindex
+{
+  "source": {
+    "index": "movies"
+  },
+  "dest": {
+    "index": "movies_semantic",
+    "pipeline": "copy_synopsis_to_semantic"
+  }
+}
+
+
+# ============================================
+# SEMANTIC SEARCH QUERIES
+# ============================================
+
+# Check all movies
+POST /movies_semantic/_search
+
+# Semantic search - cars
+POST /movies_semantic/_search
+{
+    "query": {
+        "semantic": {
+            "field": "synopsis_semantic",
+            "query": "a movie with cars"
+        }
+    }
+}
+
+# Semantic search - social class conflict
+POST /movies_semantic/_search
+{
+    "query": {
+        "semantic": {
+            "field": "synopsis_semantic",
+            "query": "conflict between rich and poor, social inequality"
+        }
+    }
+}
+
+# Semantic search - questioning reality
+POST /movies_semantic/_search
+{
+    "query": {
+        "semantic": {
+            "field": "synopsis_semantic",
+            "query": "someone discovers their reality is an illusion"
+        }
+    }
+}
+
+
+# ============================================
+# HYBRID SEARCH (RRF)
+# ============================================
+
+
+
+# Hybrid with filter
+POST /movies_semantic/_search
+{
+  "retriever": {
+    "rrf": {
+      "retrievers": [
+        {
+          "standard": {
+            "query": {
+              "bool": {
+                "must": {
+                  "match": {
+                    "synopsis": "dreams mind"
+                  }
+                },
+                "filter": {
+                  "range": {
+                    "rating": {
+                      "gte": 8
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "standard": {
+            "query": {
+              "bool": {
+                "must": {
+                  "semantic": {
+                    "field": "synopsis_semantic",
+                    "query": "exploring dreams and the subconscious"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+
+
+# ============================================
+# RAG - RETRIEVAL AUGMENTED GENERATION
+# ============================================
+# Setup LLM endpoint (Gemini)
+PUT _inference/completion/movies-chat
+{
+  "service": "googleaistudio",
+  "service_settings": {
+    "api_key": "YOUR_API_KEY",
+    "model_id": "gemini-2.0-flash"
+  }
+}
+
+GET  _inference
+
+
+# Step 1: Ask LLM WITHOUT context (will fail or hallucinate)
+POST _inference/completion/movies-chat
+{
+  "input": "How many Christopher Nolan movies do I have in my database? Which ones?"
+}
+
+# Step 2: RETRIEVAL - Search for Nolan movies
+POST /movies_semantic/_search
+{
+  "size": 10,
+  "query": {
+    "match": {
+      "director": "Christopher Nolan"
+    }
+  }
+}
+
+# Step 3: RAG - Give context to LLM
+POST _inference/completion/movies-chat
+{
+  "input": "CONTEXT - Christopher Nolan movies in our database:\n\n1. Inception (2010) - Rating: 8.8/10\nSynopsis: Dom Cobb is a skilled thief who steals secrets from deep within the subconscious during the dream state.\n\n2. Interstellar (2014) - Rating: 8.7/10\nSynopsis: A group of explorers must travel through a wormhole to find a new home for humanity.\n\n3. The Dark Knight (2008) - Rating: 9.0/10\nSynopsis: Batman faces the Joker, a criminal mastermind who wants to plunge Gotham City into anarchy.\n\n4. The Prestige (2006) - Rating: 8.5/10\nSynopsis: Two rival magicians engage in a bitter battle for supremacy in Victorian London.\n\n5. Memento (2000) - Rating: 8.4/10\nSynopsis: A man with short-term memory loss uses notes and tattoos to hunt for his wife's killer.\n\n6. Dunkirk (2017) - Rating: 7.8/10\nSynopsis: Allied soldiers are evacuated during a fierce battle in World War II.\n\n7. Tenet (2020) - Rating: 7.3/10\nSynopsis: A secret agent manipulates time to prevent an attack from the future.\n\n8. Oppenheimer (2023) - Rating: 8.4/10\nSynopsis: The story of J. Robert Oppenheimer and the development of the atomic bomb.\n\n---\nQUESTION: How many Christopher Nolan movies do I have in my database? List them with their ratings and calculate the average rating."
+}
+
+POST _inference/completion/movies-chat
+{
+  "input": "CONTEXT - Christopher Nolan movies in our database:\n\n1. Inception (2010) - Rating: 8.8/10\nSynopsis: Dom Cobb is a skilled thief who steals secrets from deep within the subconscious during the dream state.\n\n2. Interstellar (2014) - Rating: 8.7/10\nSynopsis: A group of explorers must travel through a wormhole to find a new home for humanity.\n\n3. The Dark Knight (2008) - Rating: 9.0/10\nSynopsis: Batman faces the Joker, a criminal mastermind who wants to plunge Gotham City into anarchy.\n\n4. The Prestige (2006) - Rating: 8.5/10\nSynopsis: Two rival magicians engage in a bitter battle for supremacy in Victorian London.\n\n5. Memento (2000) - Rating: 8.4/10\nSynopsis: A man with short-term memory loss uses notes and tattoos to hunt for his wife's killer.\n\n6. Dunkirk (2017) - Rating: 7.8/10\nSynopsis: Allied soldiers are evacuated during a fierce battle in World War II.\n\n7. Tenet (2020) - Rating: 7.3/10\nSynopsis: A secret agent manipulates time to prevent an attack from the future.\n\n8. Oppenheimer (2023) - Rating: 8.4/10\nSynopsis: The story of J. Robert Oppenheimer and the development of the atomic bomb.\n\n---\nQUESTION: How many Christopher Nolan movies do I have in my database? List them with their ratings and calculate the average rating. And give me the name of french version of each movie "
+}
+
+
+POST _query?format=json
+{
+  "query": """
+        FROM movies_semantic
+        | WHERE match(director, "Christopher Nolan")
+        | LIMIT 10
+        | EVAL prompt = CONCAT(
+            "Here are Christopher Nolan movies in our database:\n",
+            "- ", title, " (", TO_STRING(year), ") - Rating: ", TO_STRING(rating), "\n",
+            "Synopsis: ", synopsis, "\n\n",
+            "Question: Summarize this movie in few sentences."
+          )
+        | COMPLETION answer = prompt WITH { "inference_id": "movies-chat" }
+        | KEEP title, year, rating, answer
+    """
+}
