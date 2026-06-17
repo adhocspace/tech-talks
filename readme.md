@@ -12,17 +12,18 @@ TechTalks is hosted by adhocSpace — a community space for builders and makers,
 - Instagram: `https://www.instagram.com/adhoc_space/`
 
 **What’s in this repo**
-- `tech-talks-5/`: event-specific materials (slides, code samples, notes)
-- Add future events as new folders, e.g. `tech-talks-6/`
+- `tech-talks-5/`
+- `tech-talks-6-nix-and-robotics/`
+- `tech-talks-7-ai-agents-mcp-and-threat-intelligence/`
+- `tech-talks-8-growth-metrics-and-behavioural-ux/`
 
-**Suggested event folder structure**
+**Event folder structure**
 ```
-tech-talks-6/
-  slides/
-  code/
-  notes/
-  assets/
-  README.md
+tech-talks-N-<theme>/
+  talk1-<speaker-name>/
+    <talk-title>.pdf
+  talk2-<speaker-name>/
+    <talk-title>.pdf
 ```
 
 **Contributing**
