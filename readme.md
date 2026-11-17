@@ -17,6 +17,7 @@ TechTalks is hosted by adhocSpace — a community space for builders and makers,
 - `tech-talks-7-ai-agents-mcp-and-threat-intelligence/`
 - `tech-talks-8-growth-metrics-and-behavioural-ux/`
 - `tech-talks-9-nix-and-ai-driven-development/`
+- `tech-talks-10-keeping-ai-written-code-safe-to-change/`
 
 **Event folder structure**
 ```
